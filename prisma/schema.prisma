@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  PRO
+  ADMIN
+}
+
+enum Trade {
+  HVAC
+  PLUMBING
+  ROOFING
+  ELECTRICAL
+  CLEANING
+  LANDSCAPING
+  PEST
+}
+
+enum Urgency {
+  NOW
+  WEEK
+  FLEX
+}
+
+enum LeadStatus {
+  OPEN
+  SOLD_OUT
+  CLOSED
+  REJECTED
+}
+
+enum PurchaseStatus {
+  NEW
+  CALLED
+  QUOTED
+  WON
+  LOST
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum TxType {
+  TOPUP
+  PURCHASE
+  REFUND
+  ADJUSTMENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(PRO)
+  createdAt    DateTime @default(now())
+  company      Company?
+}
+
+model Company {
+  id               String        @id @default(cuid())
+  name             String
+  phone            String?
+  ownerId          String        @unique
+  owner            User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  trades           Trade[]
+  serviceZips      String[]
+  balanceCents     Int           @default(0)
+  stripeCustomerId String?       @unique
+  notifyEmail      Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  purchases        Purchase[]
+  transactions     Transaction[]
+}
+
+model Lead {
+  id             String     @id @default(cuid())
+  trade          Trade
+  title          String
+  description    String
+  urgency        Urgency    @default(FLEX)
+  homeownerName  String
+  phone          String
+  email          String?
+  address        String?
+  zip            String
+  estValueCents  Int
+  exclusive      Boolean    @default(true)
+  priceCents     Int
+  maxSlots       Int        @default(1)
+  soldCount      Int        @default(0)
+  status         LeadStatus @default(OPEN)
+  source         String     @default("web")
+  utmSource      String?
+  utmCampaign    String?
+  phoneVerified  Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  purchases      Purchase[]
+
+  @@index([status, trade, createdAt])
+  @@index([zip])
+}
+
+model Purchase {
+  id         String         @id @default(cuid())
+  leadId     String
+  lead       Lead           @relation(fields: [leadId], references: [id])
+  companyId  String
+  company    Company        @relation(fields: [companyId], references: [id])
+  priceCents Int
+  status     PurchaseStatus @default(NEW)
+  notes      String?
+  createdAt  DateTime       @default(now())
+  refund     RefundRequest?
+
+  @@unique([leadId, companyId])
+  @@index([companyId, createdAt])
+}
+
+model RefundRequest {
+  id         String       @id @default(cuid())
+  purchaseId String       @unique
+  purchase   Purchase     @relation(fields: [purchaseId], references: [id])
+  reason     String
+  status     RefundStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+  resolvedAt DateTime?
+}
+
+model Transaction {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  amountCents     Int
+  type            TxType
+  reference       String?
+  stripeSessionId String?  @unique
+  createdAt       DateTime @default(now())
+
+  @@index([companyId, createdAt])
+}
+
+model PricingRule {
+  trade                Trade @id
+  exclusiveCents       Int
+  sharedCents          Int
+  sharedSlots          Int   @default(3)
+  emergencyMult        Float @default(1.6)
+  bigJobMult           Float @default(1.3)
+  bigJobThresholdCents Int   @default(500000)
+  avgTicketCents       Int
+}
